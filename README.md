@@ -1,172 +1,190 @@
 # Campus Event Management System
 
-A full-stack college mini-project.  
-**Tech stack:** React 19 + Vite + TypeScript · Spring Boot 3 · MySQL 8 · JDBC (no JPA) · JWT
+A full-stack, enterprise-grade university event management and registration portal designed for college symposiums, workshops, technical bootcamps, and cultural festivals.
+
+Built with **React + TypeScript + Vite**, **Java Spring Boot 3**, **MySQL 8.0**, and **Spring Security (JWT)** using pure **JDBC & the DAO pattern** (no JPA/Hibernate overhead).
 
 ---
 
-## ✅ Milestone 1 — Frontend Demo (COMPLETE)
+## 🏛️ System Architecture & Technology Stack
 
-### How to run the frontend right now
+| Layer | Technologies & Libraries | Key Responsibilities |
+| :--- | :--- | :--- |
+| **Frontend** | React 19, TypeScript, Vite | Modern responsive UI, role-aware routing, interactive modals, real-time unread badges, toast alerts. |
+| **Backend** | Java 17+, Spring Boot 3.2.5 | RESTful APIs, Spring Security with stateless JWT (`HS256`), role-based access control (Admin/Student). |
+| **Database** | MySQL 8.0+, HikariCP Connection Pool | Relational schema with strict foreign keys, unique constraints, and transaction isolation (`SELECT FOR UPDATE`). |
+| **Data Access** | Pure JDBC (`PreparedStatement`, DAO Pattern) | Complete manual query control, SQL injection prevention, zero ORM caching bugs. |
+| **Algorithms** | MergeSort $O(n \log n)$, FIFO Queue | Algorithmic event sorting by date and fair waitlist management for fully-booked events. |
+
+---
+
+## 📋 Prerequisites for Windows
+
+Before starting, ensure the target evaluation machine has the following installed:
+
+1. **Java JDK 17 or higher**: [Download OpenJDK / Oracle JDK](https://adoptium.net/)  
+   *Verify in terminal:* `java -version`
+2. **Node.js 18 or higher** (includes npm): [Download Node.js](https://nodejs.org/)  
+   *Verify in terminal:* `node -v` and `npm -v`
+3. **MySQL Server 8.0 or higher**: [Download MySQL Community Server](https://dev.mysql.com/downloads/installer/)  
+   *Verify MySQL is running on port 3306.*
+
+*(Note: Apache Maven does **not** need to be pre-installed; the project includes the self-contained Maven Wrapper `mvnw.cmd`).*
+
+---
+
+## 🚀 Quick Setup & Startup Instructions
+
+### Step 1: Clone the Repository
+```powershell
+git clone https://github.com/harikrishnasandi-stack/campus-event-registration-system.git
+cd campus-event-registration-system
+```
+
+---
+
+### Step 2: Initialize the MySQL Database
+Open PowerShell and pipe the provided idempotent SQL schema into MySQL. Replace `root` and enter your MySQL root password when prompted:
 
 ```powershell
-# Navigate to the project
-cd C:\Users\harik\CampusEventManagement
-
-# Start dev server (Node.js path already set if using the same session)
-C:\tools\node-v20.19.0-win-x64\npm.cmd run dev
+# Using the schema file from the database directory:
+mysql -u root -p < database\schema.sql
 ```
+*(Alternatively, execute the script via MySQL Workbench or from `backend\src\main\resources\schema.sql`).*
 
-Then open **http://localhost:5174/** in your browser.
-
-### Demo Credentials
-
-| Role    | Email                  | Password       |
-|---------|------------------------|----------------|
-| Admin   | admin@campus.edu       | Admin@1234     |
-| Student | student@campus.edu     | Student@1234   |
-
-Click **"Quick Demo Login"** buttons on the login page to auto-fill.
+**What this does:**
+- Creates the `campus_events` database with UTF-8 character encoding.
+- Creates all required relational tables: `students`, `events`, `registrations`, `certificates`, and `notifications`.
+- Configures foreign key cascades and unique constraints to prevent double booking.
+- Inserts pre-seeded demo accounts with BCrypt-hashed passwords (cost factor 12).
+- Inserts realistic upcoming and completed campus events.
 
 ---
 
-## 🗂️ Project Structure
+### Step 3: Start the Spring Boot Backend
 
-```
-CampusEventManagement/          ← Frontend (React + Vite + TypeScript)
-  src/
-    types/index.ts              ← Domain types (User, CampusEvent, Registration…)
-    data/demoData.ts            ← Demo users, events, registrations
-    styles/global.css           ← All CSS (navy/blue university theme)
-    components/
-      Navbar.tsx                ← Sticky top navigation, role-aware links
-      EventCard.tsx             ← Reusable event card with seat progress bar
-      DemoBanner.tsx            ← Yellow demo-mode notice bar
-    pages/
-      LoginPage.tsx             ← Sign-in + Register form with demo shortcuts
-      StudentDashboard.tsx      ← Stats, upcoming events, my registrations preview
-      EventsPage.tsx            ← Searchable, filterable events grid
-      EventDetailPage.tsx       ← Full event info + register widget
-      MyRegistrations.tsx       ← Student's own registrations table
-      MyCertificates.tsx        ← Certificate download cards
-      AdminDashboard.tsx        ← Admin stats + events overview
-      AdminEvents.tsx           ← Full CRUD modal for events
-      AdminParticipants.tsx     ← Searchable participants list per event
-      AdminCertificates.tsx     ← PDF upload modal + certificates table
-    App.tsx                     ← Router (no react-router — simple state machine)
-    main.tsx                    ← ReactDOM entry point
-
-EventManagementSystem/backend/  ← Spring Boot backend (Milestone 2+)
-  src/main/java/com/campus/events/
-    model/                      Student, Event, Registration, Certificate
-    dao/                        StudentDAO, EventDAO, RegistrationDAO, CertificateDAO
-    service/                    AuthService, EventService, RegistrationService, CertificateService
-    controller/                 AuthController, EventController, RegistrationController, CertificateController
-    security/                   JwtUtil, JwtAuthFilter
-    config/                     SecurityConfig, DatabaseConfig
-    util/
-      EventSorter.java          ← DSA: Merge Sort O(n log n) by event date
-      WaitlistQueue.java        ← Java Collections: Queue<Long> for waitlist
-  src/main/resources/
-    schema.sql                  ← MySQL schema + seed data
-    application.properties      ← Config (reads from env vars)
-```
+1. Navigate to the `backend` folder:
+   ```powershell
+   cd backend
+   ```
+2. If your local MySQL password differs from the default (`Campus2024!`), pass your password via environment variable:
+   ```powershell
+   $env:DB_PASSWORD="your_mysql_password"
+   ```
+3. Start the backend using the included Maven Wrapper:
+   ```powershell
+   .\mvnw.cmd spring-boot:run
+   ```
+4. The backend will boot up on **`http://localhost:8080`**.  
+   *Look for the log:* `Started EventManagementApplication in X.XXX seconds`.
 
 ---
 
-## 🚀 Milestone Roadmap
+### Step 4: Start the React Frontend
 
-| # | Milestone | Status |
-|---|-----------|--------|
-| 1 | React frontend with all pages and demo data | ✅ **DONE** |
-| 2 | MySQL schema + JDBC DAO layer | ⏳ Needs MySQL |
-| 3 | Spring Boot auth (BCrypt + JWT) | ⏳ |
-| 4 | Event CRUD, registration, participant list | ⏳ |
-| 5 | Certificate upload/download (PDF) | ⏳ |
-| 6 | End-to-end test + final README | ⏳ |
-
----
-
-## 💾 MySQL Setup (Milestone 2)
-
-### Install MySQL
-
-**Option A — winget (recommended):**
-```powershell
-winget install Oracle.MySQL
-```
-
-**Option B — manual:**  
-Download MySQL 8.0 Community Server from https://dev.mysql.com/downloads/mysql/
-
-### Initialize database
+Open a **new PowerShell terminal**, navigate to the project root, and launch Vite:
 
 ```powershell
-mysql -u root -p < EventManagementSystem\backend\src\main\resources\schema.sql
+cd campus-event-registration-system
+npm install
+npm run dev
 ```
 
-### Environment variables (set before starting backend)
+The frontend will start and display:
+```
+  ➜  Local:   http://localhost:5173/
+```
+Open **`http://localhost:5173/`** in your browser.
 
+---
+
+## 🔑 Pre-Configured Demo Accounts
+
+You can use the one-click demo shortcuts directly on the login screen, or type the credentials manually:
+
+| Role | Email | Password | Access Capabilities |
+| :--- | :--- | :--- | :--- |
+| **Campus Admin** | `admin@campus.edu` | `Admin@1234` | Create events, edit details, cancel events, view attendee rosters, upload participant PDF certificates. |
+| **Student** | `student@campus.edu` | `Student@1234` | Browse upcoming events, instant registration, waitlist, cancel registration, download certificates, notifications. |
+
+*(New student accounts can also be created live using the "Register" tab on the login screen).*
+
+---
+
+## 🧪 Running Automated Tests
+
+### Backend Unit & Integration Tests
+Runs tests verifying event cancellation authorization, notification dispatch, idempotency, and deadline detection:
 ```powershell
-$env:DB_URL      = "jdbc:mysql://localhost:3306/campus_events?useSSL=false&serverTimezone=UTC"
-$env:DB_USER     = "root"
-$env:DB_PASSWORD = "your_mysql_password"
-$env:JWT_SECRET  = "Campus3v3ntS3cr3tK3y2024SuperSecureKey!"
+cd backend
+.\mvnw.cmd test
 ```
+*Expected result:* `BUILD SUCCESS` (10 tests run, 0 failures, 0 errors).
 
----
-
-## ☕ Backend Startup (Milestone 3+)
-
+### Frontend Production Build Test
+Verifies TypeScript type integrity and produces production bundle:
 ```powershell
-# Add Maven to PATH (already downloaded)
-$env:PATH = "C:\tools\apache-maven-3.9.6\bin;$env:PATH"
-
-# Build and run
-cd EventManagementSystem\backend
-mvn spring-boot:run
-# Backend runs at http://localhost:8080
+cd ..
+npm run build
 ```
-
-### Key API endpoints
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | /api/auth/login | Public | Login → JWT |
-| POST | /api/auth/register | Public | New student |
-| GET | /api/events | Student/Admin | All published events (Merge Sorted) |
-| POST | /api/events | Admin | Create event |
-| PUT | /api/events/{id}/publish | Admin | Publish event |
-| POST | /api/registrations/event/{id} | Student | Register (transaction-safe) |
-| GET | /api/registrations/my | Student | Own registrations |
-| POST | /api/certificates/upload | Admin | Upload PDF |
-| GET | /api/certificates/download | Student/Admin | Download PDF |
+*Expected result:* `✓ built in ...` with zero TypeScript or packaging errors.
 
 ---
 
-## 🧠 DSA & Java Collections — Viva Reference
+## ⚙️ Environment Variables & Configuration
 
-### Merge Sort (`EventSorter.java`)
-- **Used in:** `EventService.getPublishedEvents()` and `getAllEvents()`
-- **Complexity:** O(n log n) time · O(n) space
-- **Why:** Stable sort (events on same date keep insertion order); consistent O(n log n) unlike QuickSort
+The application is fully configurable via environment variables or a `.env` file (template provided in `.env.example`):
 
-### Java Collections Used
-
-| Collection | Class | Where | Why |
-|------------|-------|-------|-----|
-| `ArrayList` | `java.util.ArrayList` | All DAOs, EventService | Ordered list of DB results |
-| `HashMap` | `java.util.HashMap` | EventDAO (cache), JwtUtil (claims), AuthService (response) | O(1) key lookup |
-| `HashSet` | `java.util.HashSet` | RegistrationDAO | O(1) duplicate registration pre-check |
-| `Queue` | `java.util.Queue` (LinkedList) | WaitlistQueue | FIFO waitlist processing |
+| Variable | Default Value | Description |
+| :--- | :--- | :--- |
+| `DB_URL` | `jdbc:mysql://127.0.0.1:3306/campus_events...` | MySQL connection string. |
+| `DB_USER` | `root` | MySQL username. |
+| `DB_PASSWORD` | `Campus2024!` | MySQL password. |
+| `JWT_SECRET` | `Campus3v3ntS3cr3tK3y2024SuperSecureKey!` | Secret key for signing HS256 JWT tokens. |
+| `PORT` | `8080` | Spring Boot server port. |
+| `UPLOAD_DIR` | `./uploads/certificates` | Directory for uploaded student certificates. |
+| `CAMPUS_TIMEZONE`| `Asia/Kolkata` | Campus local timezone for event deadlines. |
 
 ---
 
-## 🔐 Security Design
+## 📂 Repository Directory Structure
 
-- Passwords hashed with **BCrypt** (cost factor 12) — never stored in plaintext
-- **JWT tokens** signed with HS256 — stateless, no server-side sessions
-- Students can only access **their own** registrations and certificates (enforced by JWT `userId` claim)
-- Certificate uploads: PDF-only validation, UUID stored filename, path traversal guard
-- DB **UNIQUE constraint** on `(student_id, event_id)` + **transaction** prevents duplicate registration and overbooking
-- All credentials in **environment variables**, never in source code
+```
+campus-event-registration-system/
+├── .env.example               # Safe environment variable configuration template
+├── .gitignore                 # Excludes node_modules, build targets, secrets, logs
+├── package.json               # Frontend dependencies & scripts
+├── vite.config.ts             # Vite configuration with /api backend proxy
+├── tsconfig.json              # TypeScript compilation configuration
+├── index.html                 # HTML entry point
+│
+├── database/
+│   └── schema.sql             # Complete MySQL DDL schema + seed accounts & events
+│
+├── src/                       # React 19 Frontend
+│   ├── api/client.ts          # Strongly-typed fetch API client & JWT token management
+│   ├── components/            # UI components (Navbar, NotificationBell, EventCard, etc.)
+│   ├── pages/                 # Portal views (Login, Dashboards, Events, Registrations, Certs)
+│   ├── styles/global.css      # Custom styling & responsive layouts
+│   └── types/                 # Shared TypeScript interfaces
+│
+└── backend/                   # Spring Boot 3 Java Backend
+    ├── pom.xml                # Maven configuration (Spring Boot, MySQL Driver, JJWT)
+    ├── mvnw / mvnw.cmd        # Self-contained Maven Wrapper scripts
+    ├── .mvn/wrapper/          # Maven wrapper properties & binaries
+    └── src/
+        ├── main/java/com/campus/events/
+        │   ├── config/        # SecurityConfig, DatabaseConfig, WebMvcConfig
+        │   ├── controller/    # REST Controllers (Auth, Events, Registrations, Notifications, etc.)
+        │   ├── dao/           # Pure JDBC DAOs with PreparedStatement
+        │   ├── model/         # Domain models (Student, Event, Registration, Notification)
+        │   ├── security/      # JwtUtil, JwtAuthFilter, PasswordEncoder
+        │   ├── service/       # Business logic (Auth, Event, Waitlist, Registration, Certs)
+        │   └── util/          # MergeSort implementation, WaitlistQueue
+        ├── main/resources/
+        │   ├── application.properties # Spring configuration with fallback defaults
+        │   └── schema.sql     # Database schema mirror for backend resources
+        └── test/java/com/campus/events/
+            ├── EventCancellationTest.java  # Admin vs Student authorization tests
+            └── NotificationServiceTest.java # Deadline calculation and idempotency tests
+```
