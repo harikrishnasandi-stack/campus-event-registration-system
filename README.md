@@ -54,10 +54,10 @@ mysql -u root -p < database\schema.sql
 
 **What this does:**
 - Creates the `campus_events` database with UTF-8 character encoding.
-- Creates all required relational tables: `students`, `events`, `registrations`, `certificates`, and `notifications`.
+- Creates all required relational tables: `students`, `events`, `registrations`, `payment_submissions`, `certificates`, and `notifications`.
 - Configures foreign key cascades and unique constraints to prevent double booking.
 - Inserts pre-seeded demo accounts with BCrypt-hashed passwords (cost factor 12).
-- Inserts realistic upcoming and completed campus events.
+- Inserts realistic upcoming, paid, free, and completed campus events.
 
 ---
 
@@ -104,8 +104,8 @@ You can use the one-click demo shortcuts directly on the login screen, or type t
 
 | Role | Email | Password | Access Capabilities |
 | :--- | :--- | :--- | :--- |
-| **Campus Admin** | `admin@campus.edu` | `Admin@1234` | Create events, edit details, cancel events, view attendee rosters, upload participant PDF certificates. |
-| **Student** | `student@campus.edu` | `Student@1234` | Browse upcoming events, instant registration, waitlist, cancel registration, download certificates, notifications. |
+| **Campus Admin** | `admin@campus.edu` | `Admin@1234` | Create & edit events, upload UPI QR codes, cancel/delete events, verify & approve/reject student payments, view attendee rosters, upload participant PDF certificates. |
+| **Student** | `student@campus.edu` | `Student@1234` | Browse upcoming events, free event registration, scan UPI QR for paid events & submit payment proof, download official registration receipts, view waitlist status, download certificates, notifications. |
 
 *(New student accounts can also be created live using the "Register" tab on the login screen).*
 
@@ -114,12 +114,12 @@ You can use the one-click demo shortcuts directly on the login screen, or type t
 ## 🧪 Running Automated Tests
 
 ### Backend Unit & Integration Tests
-Runs tests verifying event cancellation authorization, notification dispatch, idempotency, and deadline detection:
+Runs tests verifying event cancellation authorization, payment submissions & approval, receipt generation, safe event deletion, notification dispatch, idempotency, and deadline detection:
 ```powershell
 cd backend
 .\mvnw.cmd test
 ```
-*Expected result:* `BUILD SUCCESS` (10 tests run, 0 failures, 0 errors).
+*Expected result:* `BUILD SUCCESS` (20 tests run, 0 failures, 0 errors across 3 test suites: `EventCancellationTest`, `EventDeletionAndPaymentTest`, `NotificationServiceTest`).
 
 ### Frontend Production Build Test
 Verifies TypeScript type integrity and produces production bundle:
@@ -164,7 +164,7 @@ campus-event-registration-system/
 ├── src/                       # React 19 Frontend
 │   ├── api/client.ts          # Strongly-typed fetch API client & JWT token management
 │   ├── components/            # UI components (Navbar, NotificationBell, EventCard, etc.)
-│   ├── pages/                 # Portal views (Login, Dashboards, Events, Registrations, Certs)
+│   ├── pages/                 # Portal views (Login, Dashboards, Events, Registrations, AdminPayments, Certs)
 │   ├── styles/global.css      # Custom styling & responsive layouts
 │   └── types/                 # Shared TypeScript interfaces
 │
@@ -175,16 +175,17 @@ campus-event-registration-system/
     └── src/
         ├── main/java/com/campus/events/
         │   ├── config/        # SecurityConfig, DatabaseConfig, WebMvcConfig
-        │   ├── controller/    # REST Controllers (Auth, Events, Registrations, Notifications, etc.)
-        │   ├── dao/           # Pure JDBC DAOs with PreparedStatement
-        │   ├── model/         # Domain models (Student, Event, Registration, Notification)
+        │   ├── controller/    # REST Controllers (Auth, Events, Registrations, Payments, Notifications, etc.)
+        │   ├── dao/           # Pure JDBC DAOs with PreparedStatement (User, Event, Reg, Payment, Notification, Cert)
+        │   ├── model/         # Domain models (Student, Event, Registration, PaymentSubmission, Notification, Cert)
         │   ├── security/      # JwtUtil, JwtAuthFilter, PasswordEncoder
-        │   ├── service/       # Business logic (Auth, Event, Waitlist, Registration, Certs)
+        │   ├── service/       # Business logic (Auth, Event, Payment, Waitlist, Registration, Certs)
         │   └── util/          # MergeSort implementation, WaitlistQueue
         ├── main/resources/
         │   ├── application.properties # Spring configuration with fallback defaults
         │   └── schema.sql     # Database schema mirror for backend resources
         └── test/java/com/campus/events/
-            ├── EventCancellationTest.java  # Admin vs Student authorization tests
-            └── NotificationServiceTest.java # Deadline calculation and idempotency tests
+            ├── EventCancellationTest.java      # Admin vs Student authorization tests
+            ├── EventDeletionAndPaymentTest.java # Payment workflow & event deletion tests
+            └── NotificationServiceTest.java     # Deadline calculation and idempotency tests
 ```

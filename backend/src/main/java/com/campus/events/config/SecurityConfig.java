@@ -61,6 +61,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/health").permitAll()
                 .requestMatchers("/error").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/events/*/qr-code").permitAll()
 
                 // Admin-only event mutations
                 .requestMatchers(HttpMethod.POST, "/api/events/**").hasRole("ADMIN")
@@ -73,6 +74,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/registrations/**").authenticated()
                 .requestMatchers("/api/certificates/**").authenticated()
                 .requestMatchers("/api/notifications/**").authenticated()
+                .requestMatchers("/api/payments/**").authenticated()
 
                 // Everything else requires auth
                 .anyRequest().authenticated()
@@ -87,7 +89,7 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         List<String> origins = Arrays.asList(allowedOrigins.split(","));
         config.setAllowedOrigins(origins);
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);

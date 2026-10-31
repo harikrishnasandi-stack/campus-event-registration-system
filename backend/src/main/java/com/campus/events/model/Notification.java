@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 
 /**
  * Notification domain model.
- * Represents an in-app notification for a student (e.g. registration deadline reminder).
+ * Represents an in-app notification for a user (e.g. new event announcement, registration deadline reminder).
  */
 public class Notification {
     private Long id;
@@ -13,6 +13,7 @@ public class Notification {
     private Long eventId;
     private String notificationType;
     private String message;
+    private String title;
 
     @JsonProperty("isRead")
     private boolean isRead;
@@ -73,6 +74,30 @@ public class Notification {
         this.message = message;
     }
 
+    @JsonProperty("title")
+    public String getTitle() {
+        if (title != null && !title.isBlank()) {
+            return title;
+        }
+        if ("EVENT_ANNOUNCEMENT".equalsIgnoreCase(notificationType)) {
+            return "New Event Announcement!";
+        }
+        if ("PAYMENT_SUBMITTED".equalsIgnoreCase(notificationType)) {
+            return "Payment Proof Submitted";
+        }
+        if ("PAYMENT_APPROVED".equalsIgnoreCase(notificationType)) {
+            return "Payment Approved!";
+        }
+        if ("PAYMENT_REJECTED".equalsIgnoreCase(notificationType)) {
+            return "Payment Verification Failed";
+        }
+        return "Event Deadline Reminder";
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
     @JsonProperty("isRead")
     public boolean isRead() {
         return isRead;
@@ -112,4 +137,3 @@ public class Notification {
         this.registrationDeadline = registrationDeadline;
     }
 }
-

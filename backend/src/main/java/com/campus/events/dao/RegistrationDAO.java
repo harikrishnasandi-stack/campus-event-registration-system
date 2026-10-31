@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 
 import javax.sql.DataSource;
+import java.math.BigDecimal;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -80,7 +81,7 @@ public class RegistrationDAO {
             conn.setAutoCommit(false); // BEGIN TRANSACTION
 
             // Lock the event row for update to prevent race conditions
-            String lockSql = "SELECT total_seats, registered_count, status, registration_deadline FROM events WHERE id = ? FOR UPDATE";
+            String lockSql = "SELECT total_seats, registered_count, status, registration_deadline, fee FROM events WHERE id = ? FOR UPDATE";
             PreparedStatement lockPs = conn.prepareStatement(lockSql);
             lockPs.setLong(1, eventId);
             ResultSet lockRs = lockPs.executeQuery();
@@ -94,6 +95,7 @@ public class RegistrationDAO {
             Timestamp deadline = lockRs.getTimestamp("registration_deadline");
             int totalSeats = lockRs.getInt("total_seats");
             int registeredCount = lockRs.getInt("registered_count");
+            BigDecimal fee = lockRs.getBigDecimal("fee");
 
             // Validate event is open for registration
             if (!"PUBLISHED".equals(eventStatus)) {
@@ -105,11 +107,17 @@ public class RegistrationDAO {
                 throw new RuntimeException("Registration deadline has passed");
             }
 
+            // Paid event requirement: must go through UPI payment flow
+            if (fee != null && fee.compareTo(BigDecimal.ZERO) > 0) {
+                conn.rollback();
+                throw new RuntimeException("This is a paid event (Fee: ₹" + fee + "). Please submit UPI payment proof to register.");
+            }
+
             // Determine registration status
             String regStatus = (registeredCount < totalSeats) ? "REGISTERED" : "WAITLISTED";
 
             // Insert registration record
-            String insertSql = "INSERT INTO registrations (student_id, event_id, status) VALUES (?, ?, ?)";
+            String insertSql = "INSERT INTO registrations (student_id, event_id, status, payment_status) VALUES (?, ?, ?, 'NOT_REQUIRED')";
             PreparedStatement insertPs = conn.prepareStatement(insertSql);
             insertPs.setLong(1, studentId);
             insertPs.setLong(2, eventId);
@@ -144,6 +152,56 @@ public class RegistrationDAO {
                 try { conn.setAutoCommit(true); conn.close(); } catch (SQLException e) { log.error("Error closing connection", e); }
             }
         }
+    }
+
+    /**
+     * Create or update a pending registration for a paid event.
+     * Returns the registration ID.
+     */
+    public Long createOrUpdatePendingPaidRegistration(Long studentId, Long eventId) {
+        String checkSql = "SELECT id, status, payment_status FROM registrations WHERE student_id = ? AND event_id = ?";
+        try (Connection conn = dataSource.getConnection()) {
+            try (PreparedStatement checkPs = conn.prepareStatement(checkSql)) {
+                checkPs.setLong(1, studentId);
+                checkPs.setLong(2, eventId);
+                try (ResultSet rs = checkPs.executeQuery()) {
+                    if (rs.next()) {
+                        long regId = rs.getLong("id");
+                        String payStatus = rs.getString("payment_status");
+                        if ("APPROVED".equalsIgnoreCase(payStatus)) {
+                            throw new IllegalStateException("You already have an approved registration for this event.");
+                        }
+                        if ("PENDING".equalsIgnoreCase(payStatus)) {
+                            throw new IllegalStateException("You already have a pending payment proof submission awaiting admin review.");
+                        }
+                        // Allow resubmission if REJECTED or CANCELLED
+                        String updateSql = "UPDATE registrations SET status = 'PENDING', payment_status = 'PENDING', registered_at = NOW() WHERE id = ?";
+                        try (PreparedStatement updatePs = conn.prepareStatement(updateSql)) {
+                            updatePs.setLong(1, regId);
+                            updatePs.executeUpdate();
+                        }
+                        return regId;
+                    }
+                }
+            }
+
+            // Fresh insert
+            String insertSql = "INSERT INTO registrations (student_id, event_id, status, payment_status) VALUES (?, ?, 'PENDING', 'PENDING')";
+            try (PreparedStatement insertPs = conn.prepareStatement(insertSql, Statement.RETURN_GENERATED_KEYS)) {
+                insertPs.setLong(1, studentId);
+                insertPs.setLong(2, eventId);
+                insertPs.executeUpdate();
+                try (ResultSet keys = insertPs.getGeneratedKeys()) {
+                    if (keys.next()) {
+                        return keys.getLong(1);
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            log.error("Error creating/updating pending paid registration: {}", e.getMessage());
+            throw new RuntimeException("Database error: " + e.getMessage());
+        }
+        throw new RuntimeException("Failed to generate registration ID");
     }
 
     /**
@@ -231,9 +289,11 @@ public class RegistrationDAO {
     /** Find registrations by student ID (for student's my-events view). */
     public ArrayList<Registration> findByStudentId(Long studentId) {
         String sql = """
-                SELECT r.*, e.title AS event_title, e.event_date, e.status AS event_status
+                SELECT r.*, e.title AS event_title, e.event_date, e.venue, e.status AS event_status, e.fee AS event_fee,
+                       p.amount AS payment_amount, p.transaction_id, p.rejection_reason
                 FROM registrations r
                 JOIN events e ON r.event_id = e.id
+                LEFT JOIN payment_submissions p ON r.id = p.registration_id
                 WHERE r.student_id = ?
                 ORDER BY r.registered_at DESC
                 """;
@@ -258,10 +318,12 @@ public class RegistrationDAO {
     public ArrayList<Registration> findByEventId(Long eventId) {
         String sql = """
                 SELECT r.*, s.name AS student_name, s.register_number, s.email, s.department, s.year,
-                       e.title AS event_title, e.event_date, e.status AS event_status
+                       e.title AS event_title, e.event_date, e.venue, e.status AS event_status, e.fee AS event_fee,
+                       p.amount AS payment_amount, p.transaction_id, p.rejection_reason
                 FROM registrations r
                 JOIN students s ON r.student_id = s.id
                 JOIN events e ON r.event_id = e.id
+                LEFT JOIN payment_submissions p ON r.id = p.registration_id
                 WHERE r.event_id = ?
                 ORDER BY r.status, r.registered_at ASC
                 """;
@@ -284,7 +346,14 @@ public class RegistrationDAO {
 
     /** Find a specific registration by student and event IDs. */
     public Optional<Registration> findByStudentAndEvent(Long studentId, Long eventId) {
-        String sql = "SELECT * FROM registrations WHERE student_id = ? AND event_id = ?";
+        String sql = """
+                SELECT r.*, e.title AS event_title, e.event_date, e.venue, e.status AS event_status, e.fee AS event_fee,
+                       p.amount AS payment_amount, p.transaction_id, p.rejection_reason
+                FROM registrations r
+                JOIN events e ON r.event_id = e.id
+                LEFT JOIN payment_submissions p ON r.id = p.registration_id
+                WHERE r.student_id = ? AND r.event_id = ?
+                """;
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
 
@@ -308,6 +377,7 @@ public class RegistrationDAO {
         r.setStudentId(rs.getLong("student_id"));
         r.setEventId(rs.getLong("event_id"));
         r.setStatus(rs.getString("status"));
+        try { r.setPaymentStatus(rs.getString("payment_status")); } catch (SQLException ignored) {}
         Timestamp registeredAt = rs.getTimestamp("registered_at");
         if (registeredAt != null) r.setRegisteredAt(registeredAt.toLocalDateTime());
 
@@ -318,6 +388,14 @@ public class RegistrationDAO {
             if (ed != null) r.setEventDate(ed.toLocalDateTime());
         } catch (SQLException ignored) {}
         try { r.setEventStatus(rs.getString("event_status")); } catch (SQLException ignored) {}
+        try { r.setVenue(rs.getString("venue")); } catch (SQLException ignored) {}
+        try {
+            BigDecimal amt = rs.getBigDecimal("payment_amount");
+            if (amt == null) amt = rs.getBigDecimal("event_fee");
+            r.setAmount(amt != null ? amt : BigDecimal.ZERO);
+        } catch (SQLException ignored) {}
+        try { r.setTransactionId(rs.getString("transaction_id")); } catch (SQLException ignored) {}
+        try { r.setRejectionReason(rs.getString("rejection_reason")); } catch (SQLException ignored) {}
 
         return r;
     }

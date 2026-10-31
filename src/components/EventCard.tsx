@@ -90,6 +90,16 @@ export default function EventCard({ event, onViewDetail }: Props) {
       <div className="event-card-footer">
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           <StatusBadge status={event.status} />
+          {event.fee !== undefined && (
+            <span style={{
+              background: event.fee > 0 ? '#ecfdf5' : '#f1f5f9',
+              color: event.fee > 0 ? '#047857' : '#475569',
+              border: event.fee > 0 ? '1px solid #a7f3d0' : '1px solid #cbd5e1',
+              padding: '1px 8px', borderRadius: 10, fontSize: '0.75rem', fontWeight: 700
+            }}>
+              {event.fee > 0 ? `₹${event.fee}` : 'FREE'}
+            </span>
+          )}
           {deadlinePast && <span className="badge badge-danger">Closed</span>}
           {isFull && !deadlinePast && <span className="badge badge-warning">Waitlist</span>}
         </div>

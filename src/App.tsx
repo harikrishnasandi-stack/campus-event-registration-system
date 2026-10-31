@@ -13,6 +13,7 @@ import AdminDashboard   from './pages/AdminDashboard';
 import AdminEvents      from './pages/AdminEvents';
 import AdminParticipants from './pages/AdminParticipants';
 import AdminCertificates from './pages/AdminCertificates';
+import AdminPayments     from './pages/AdminPayments';
 import Navbar           from './components/Navbar';
 
 // ── App Root ───────────────────────────────────────────────────
@@ -67,6 +68,8 @@ export default function App() {
         return <AdminParticipants eventId={selectedEventId!} user={user} navigate={navigate} />;
       case 'admin-certificates':
         return <AdminCertificates user={user} navigate={navigate} />;
+      case 'admin-payments':
+        return <AdminPayments user={user} navigate={navigate} />;
       default:
         return <div style={{ padding: '2rem' }}>Page not found.</div>;
     }

@@ -1,5 +1,7 @@
 package com.campus.events.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -19,6 +21,10 @@ public class Event {
     private Integer registeredCount;
     private String status; // DRAFT, PUBLISHED, COMPLETED, CANCELLED
     private Long createdBy;
+    private BigDecimal fee = BigDecimal.ZERO;
+    private String upiQrImage;
+    @JsonProperty("isDeleted")
+    private boolean isDeleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -57,6 +63,15 @@ public class Event {
 
     public Long getCreatedBy() { return createdBy; }
     public void setCreatedBy(Long createdBy) { this.createdBy = createdBy; }
+
+    public BigDecimal getFee() { return fee != null ? fee : BigDecimal.ZERO; }
+    public void setFee(BigDecimal fee) { this.fee = fee; }
+
+    public String getUpiQrImage() { return upiQrImage; }
+    public void setUpiQrImage(String upiQrImage) { this.upiQrImage = upiQrImage; }
+
+    public boolean isDeleted() { return isDeleted; }
+    public void setDeleted(boolean deleted) { isDeleted = deleted; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

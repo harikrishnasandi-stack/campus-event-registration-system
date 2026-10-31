@@ -114,12 +114,23 @@ export default function EventsPage({ navigate }: Props) {
                   >
                     <div className="event-card-header">
                       <div className="event-emoji">🎫</div>
-                      <span
-                        className="event-status-badge"
-                        style={{ background: statusColor(ev.status), color: '#fff', padding: '2px 10px', borderRadius: 12, fontSize: '0.72rem', fontWeight: 700 }}
-                      >
-                        {ev.status}
-                      </span>
+                      <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                        <span
+                          className="event-status-badge"
+                          style={{ background: statusColor(ev.status), color: '#fff', padding: '2px 10px', borderRadius: 12, fontSize: '0.72rem', fontWeight: 700 }}
+                        >
+                          {ev.status}
+                        </span>
+                        {Number(ev.fee) > 0 ? (
+                          <span style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '2px 8px', borderRadius: 12, fontSize: '0.72rem', fontWeight: 700 }}>
+                            ₹{ev.fee}
+                          </span>
+                        ) : (
+                          <span style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '2px 8px', borderRadius: 12, fontSize: '0.72rem', fontWeight: 700 }}>
+                            FREE
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <h3 className="event-title">{ev.title}</h3>
                     <p className="event-desc" style={{ WebkitLineClamp: 2 }}>{ev.description}</p>

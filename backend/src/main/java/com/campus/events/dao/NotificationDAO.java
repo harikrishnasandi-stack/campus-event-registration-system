@@ -118,7 +118,7 @@ public class NotificationDAO {
                 FROM notifications n
                 LEFT JOIN events e ON n.event_id = e.id
                 WHERE n.student_id = ?
-                ORDER BY n.created_at DESC
+                ORDER BY n.created_at DESC, n.id DESC
                 """;
         ArrayList<Notification> list = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
@@ -282,6 +282,28 @@ public class NotificationDAO {
         } catch (SQLException e) {
             log.error("Failed to query student IDs: {}", e.getMessage());
             throw new RuntimeException("Database error finding student IDs", e);
+        }
+    }
+
+    /**
+     * Get all registered account IDs in the portal (students and other eligible users)
+     * to receive new event announcements.
+     */
+    public ArrayList<Long> findAllUserIds() {
+        String sql = "SELECT id FROM students ORDER BY id ASC";
+        ArrayList<Long> ids = new ArrayList<>();
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) {
+                ids.add(rs.getLong("id"));
+            }
+            return ids;
+
+        } catch (SQLException e) {
+            log.error("Failed to query user IDs for announcement: {}", e.getMessage());
+            throw new RuntimeException("Database error finding user IDs", e);
         }
     }
 

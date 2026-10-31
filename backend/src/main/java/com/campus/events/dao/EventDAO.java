@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 
 import javax.sql.DataSource;
+import java.math.BigDecimal;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -37,9 +38,9 @@ public class EventDAO {
      */
     private final HashMap<Long, Event> eventCache = new HashMap<>();
 
-    /** Retrieve all published events (for students). Returns ArrayList. */
+    /** Retrieve all published events (for students). Returns ArrayList. Filters out deleted events. */
     public ArrayList<Event> findAllPublished() {
-        String sql = "SELECT * FROM events WHERE status = 'PUBLISHED' ORDER BY event_date ASC";
+        String sql = "SELECT * FROM events WHERE status = 'PUBLISHED' AND is_deleted = FALSE ORDER BY event_date ASC";
         ArrayList<Event> events = new ArrayList<>();
 
         try (Connection conn = dataSource.getConnection();
@@ -57,9 +58,9 @@ public class EventDAO {
         return events;
     }
 
-    /** Retrieve all events (for admin). Returns ArrayList. */
+    /** Retrieve all active events (for admin). Excludes deleted events. Returns ArrayList. */
     public ArrayList<Event> findAll() {
-        String sql = "SELECT * FROM events ORDER BY event_date DESC";
+        String sql = "SELECT * FROM events WHERE is_deleted = FALSE ORDER BY event_date DESC";
         ArrayList<Event> events = new ArrayList<>();
 
         try (Connection conn = dataSource.getConnection();
@@ -108,8 +109,9 @@ public class EventDAO {
     public Long save(Event event) {
         String sql = """
                 INSERT INTO events (title, description, instructions, venue, event_date,
-                                    registration_deadline, total_seats, registered_count, status, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                                    registration_deadline, total_seats, registered_count, status, created_by,
+                                    fee, upi_qr_image, is_deleted)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0)
                 """;
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -123,6 +125,8 @@ public class EventDAO {
             ps.setInt(7, event.getTotalSeats());
             ps.setString(8, event.getStatus() != null ? event.getStatus() : "DRAFT");
             ps.setLong(9, event.getCreatedBy());
+            ps.setBigDecimal(10, event.getFee() != null ? event.getFee() : BigDecimal.ZERO);
+            ps.setString(11, event.getUpiQrImage());
 
             ps.executeUpdate();
             ResultSet keys = ps.getGeneratedKeys();
@@ -143,7 +147,8 @@ public class EventDAO {
     public boolean update(Event event) {
         String sql = """
                 UPDATE events SET title=?, description=?, instructions=?, venue=?,
-                event_date=?, registration_deadline=?, total_seats=?, status=?, updated_at=NOW()
+                event_date=?, registration_deadline=?, total_seats=?, status=?,
+                fee=?, upi_qr_image=?, updated_at=NOW()
                 WHERE id=?
                 """;
         try (Connection conn = dataSource.getConnection();
@@ -157,7 +162,9 @@ public class EventDAO {
             ps.setTimestamp(6, event.getRegistrationDeadline() != null ? Timestamp.valueOf(event.getRegistrationDeadline()) : null);
             ps.setInt(7, event.getTotalSeats());
             ps.setString(8, event.getStatus());
-            ps.setLong(9, event.getId());
+            ps.setBigDecimal(9, event.getFee() != null ? event.getFee() : BigDecimal.ZERO);
+            ps.setString(10, event.getUpiQrImage());
+            ps.setLong(11, event.getId());
 
             int rows = ps.executeUpdate();
             eventCache.remove(event.getId()); // invalidate cache
@@ -188,6 +195,115 @@ public class EventDAO {
         }
     }
 
+    /** Update UPI QR image path for an event. */
+    public boolean updateQrImage(Long eventId, String qrImagePath) {
+        String sql = "UPDATE events SET upi_qr_image=?, updated_at=NOW() WHERE id=?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setString(1, qrImagePath);
+            ps.setLong(2, eventId);
+
+            int rows = ps.executeUpdate();
+            eventCache.remove(eventId);
+            return rows > 0;
+        } catch (SQLException e) {
+            log.error("Error updating QR image for event {}: {}", eventId, e.getMessage());
+            return false;
+        }
+    }
+
+    /** Check if event has dependent registrations, payments, or certificates. */
+    public boolean hasDependentRecords(Long eventId) {
+        String checkRegs = "SELECT COUNT(*) FROM registrations WHERE event_id = ?";
+        String checkPayments = "SELECT COUNT(*) FROM payment_submissions WHERE event_id = ?";
+        String checkCerts = "SELECT COUNT(*) FROM certificates WHERE event_id = ?";
+
+        try (Connection conn = dataSource.getConnection()) {
+            try (PreparedStatement ps = conn.prepareStatement(checkRegs)) {
+                ps.setLong(1, eventId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) > 0) return true;
+                }
+            }
+            try (PreparedStatement ps = conn.prepareStatement(checkPayments)) {
+                ps.setLong(1, eventId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) > 0) return true;
+                }
+            }
+            try (PreparedStatement ps = conn.prepareStatement(checkCerts)) {
+                ps.setLong(1, eventId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) > 0) return true;
+                }
+            }
+        } catch (SQLException e) {
+            log.error("Error checking dependent records for event {}: {}", eventId, e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Soft delete / archive an event that has historical records.
+     * Hides it from listings while preserving registration, payment audit, and certificates.
+     */
+    public boolean softDelete(Long eventId) {
+        String sql = "UPDATE events SET is_deleted = TRUE, status = 'CANCELLED', updated_at = NOW() WHERE id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setLong(1, eventId);
+            int rows = ps.executeUpdate();
+            eventCache.remove(eventId);
+            return rows > 0;
+        } catch (SQLException e) {
+            log.error("Error soft deleting event {}: {}", eventId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Hard delete an event that has no dependent records.
+     * Cleans up any notifications first, then permanently deletes the event row.
+     */
+    public boolean hardDelete(Long eventId) {
+        Connection conn = null;
+        try {
+            conn = dataSource.getConnection();
+            conn.setAutoCommit(false);
+
+            // Clean up notifications for this event if any
+            String notifSql = "DELETE FROM notifications WHERE event_id = ?";
+            try (PreparedStatement notifPs = conn.prepareStatement(notifSql)) {
+                notifPs.setLong(1, eventId);
+                notifPs.executeUpdate();
+            }
+
+            // Permanently delete event
+            String eventSql = "DELETE FROM events WHERE id = ?";
+            int rows;
+            try (PreparedStatement eventPs = conn.prepareStatement(eventSql)) {
+                eventPs.setLong(1, eventId);
+                rows = eventPs.executeUpdate();
+            }
+
+            conn.commit();
+            eventCache.remove(eventId);
+            return rows > 0;
+        } catch (SQLException e) {
+            if (conn != null) {
+                try { conn.rollback(); } catch (SQLException ex) { log.error("Rollback failed", ex); }
+            }
+            log.error("Error hard deleting event {}: {}", eventId, e.getMessage());
+            return false;
+        } finally {
+            if (conn != null) {
+                try { conn.setAutoCommit(true); conn.close(); } catch (SQLException ex) { log.error("Close failed", ex); }
+            }
+        }
+    }
+
     /** Map a ResultSet row to an Event object. */
     private Event mapRow(ResultSet rs) throws SQLException {
         Event e = new Event();
@@ -207,6 +323,11 @@ public class EventDAO {
         e.setRegisteredCount(rs.getInt("registered_count"));
         e.setStatus(rs.getString("status"));
         e.setCreatedBy(rs.getLong("created_by"));
+
+        BigDecimal fee = rs.getBigDecimal("fee");
+        e.setFee(fee != null ? fee : BigDecimal.ZERO);
+        e.setUpiQrImage(rs.getString("upi_qr_image"));
+        e.setDeleted(rs.getBoolean("is_deleted"));
 
         Timestamp createdAt = rs.getTimestamp("created_at");
         if (createdAt != null) e.setCreatedAt(createdAt.toLocalDateTime());

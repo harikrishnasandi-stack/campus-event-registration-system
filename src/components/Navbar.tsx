@@ -16,9 +16,10 @@ const STUDENT_LINKS: { label: string; icon: string; page: Page }[] = [
 ];
 
 const ADMIN_LINKS: { label: string; icon: string; page: Page }[] = [
-  { label: 'Dashboard',    icon: '📊', page: 'admin-dashboard'   },
-  { label: 'Events',       icon: '📅', page: 'admin-events'      },
-  { label: 'Certificates', icon: '🏆', page: 'admin-certificates'},
+  { label: 'Dashboard',            icon: '📊', page: 'admin-dashboard'   },
+  { label: 'Events',               icon: '📅', page: 'admin-events'      },
+  { label: 'Certificates',         icon: '🏆', page: 'admin-certificates'},
+  { label: 'Payment Verification', icon: '💳', page: 'admin-payments'    },
 ];
 
 export default function Navbar({ user, currentPage, navigate, onLogout }: Props) {
@@ -65,7 +66,7 @@ export default function Navbar({ user, currentPage, navigate, onLogout }: Props)
 
         {/* User */}
         <div className="nav-right" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {user.role === 'STUDENT' && <NotificationBell navigate={navigate} />}
+          <NotificationBell navigate={navigate} />
           <div className="user-pill">
             <div className="user-avatar">{initials}</div>
             <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{user.name.split(' ')[0]}</span>

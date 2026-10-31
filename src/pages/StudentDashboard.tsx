@@ -34,6 +34,18 @@ export default function StudentDashboard({ user, navigate }: Props) {
       })
       .catch(() => { /* silent — show empty state */ })
       .finally(() => setLoading(false));
+
+    const handleUpdate = () => {
+      apiGetMyNotifications()
+        .then(ns => setNotifs(ns.filter(n => !(n.isRead === true || (n as any).read === true))))
+        .catch(() => {});
+    };
+    window.addEventListener('notifications-updated', handleUpdate);
+    window.addEventListener('notification-refresh', handleUpdate);
+    return () => {
+      window.removeEventListener('notifications-updated', handleUpdate);
+      window.removeEventListener('notification-refresh', handleUpdate);
+    };
   }, []);
 
   const upcoming   = events.filter(e => e.status === 'PUBLISHED').slice(0, 3);

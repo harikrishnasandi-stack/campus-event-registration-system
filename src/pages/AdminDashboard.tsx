@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { User, Page } from '../types';
-import { apiGetAdminEvents, type ApiEvent } from '../api/client';
+import { apiGetAdminEvents, apiGetAdminPaymentCounts, type ApiEvent } from '../api/client';
 
 interface Props {
   user: User;
@@ -13,13 +13,20 @@ function fmtDate(iso: string) {
 }
 
 export default function AdminDashboard({ navigate }: Props) {
-  const [events, setEvents]   = useState<ApiEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState('');
+  const [events, setEvents]           = useState<ApiEvent[]>([]);
+  const [pendingPayments, setPendingPayments] = useState(0);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState('');
 
   useEffect(() => {
-    apiGetAdminEvents()
-      .then(setEvents)
+    Promise.all([
+      apiGetAdminEvents(),
+      apiGetAdminPaymentCounts(),
+    ])
+      .then(([evs, counts]) => {
+        setEvents(evs);
+        setPendingPayments(counts.PENDING || 0);
+      })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -90,6 +97,21 @@ export default function AdminDashboard({ navigate }: Props) {
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
           <button className="btn btn-navy" onClick={() => navigate('admin-events')}>
             🎪 Manage Events
+          </button>
+          <button
+            className="btn btn-outline"
+            onClick={() => navigate('admin-payments')}
+            style={{ position: 'relative' }}
+          >
+            💳 Verify Payments
+            {pendingPayments > 0 && (
+              <span style={{
+                marginLeft: 8, background: '#dc2626', color: '#fff', padding: '2px 8px',
+                borderRadius: 12, fontSize: '0.75rem', fontWeight: 700
+              }}>
+                {pendingPayments} pending
+              </span>
+            )}
           </button>
           <button className="btn btn-outline" onClick={() => navigate('admin-certificates')}>
             📜 Upload Certificates

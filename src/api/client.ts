@@ -88,6 +88,9 @@ export interface ApiEvent {
   registeredCount: number;
   status: 'DRAFT' | 'PUBLISHED' | 'COMPLETED' | 'CANCELLED';
   createdBy: number;
+  fee: number;
+  upiQrImage?: string;
+  isDeleted?: boolean;
   createdAt: string;
 }
 
@@ -114,6 +117,8 @@ export interface CreateEventPayload {
   eventDate: string;
   registrationDeadline: string;
   totalSeats: number;
+  fee?: number;
+  upiQrImage?: string;
 }
 
 export async function apiCreateEvent(payload: CreateEventPayload): Promise<ApiEvent> {
@@ -151,13 +156,54 @@ export async function apiCancelEvent(id: number): Promise<{ message: string; eve
   return handleResponse<{ message: string; event: ApiEvent }>(res);
 }
 
+export async function apiDeleteEvent(id: number): Promise<{ message: string; id: number }> {
+  const res = await fetch(`${BASE}/events/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  return handleResponse<{ message: string; id: number }>(res);
+}
+
+export async function apiUploadEventQrCode(id: number, file: File): Promise<{ message: string; qrImage: string; qrUrl: string }> {
+  const token = getToken();
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${BASE}/events/${id}/qr-code`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  return handleResponse<{ message: string; qrImage: string; qrUrl: string }>(res);
+}
+
+export async function apiRemoveEventQrCode(id: number): Promise<{ message: string }> {
+  const res = await fetch(`${BASE}/events/${id}/qr-code`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  return handleResponse<{ message: string }>(res);
+}
+
+export function getEventQrCodeUrl(id: number, version?: string): string {
+  const token = getToken();
+  const params = new URLSearchParams();
+  if (version) params.set('v', version);
+  if (token) params.set('token', token);
+  const qs = params.toString();
+  return `${BASE}/events/${id}/qr-code${qs ? `?${qs}` : ''}`;
+}
+
 // ── Registrations ─────────────────────────────────────────────
 
 export interface ApiRegistration {
   id: number;
   studentId: number;
   eventId: number;
-  status: 'REGISTERED' | 'WAITLISTED' | 'CANCELLED';
+  status: 'REGISTERED' | 'WAITLISTED' | 'CANCELLED' | 'PENDING';
+  paymentStatus?: 'NOT_REQUIRED' | 'PENDING' | 'APPROVED' | 'REJECTED';
+  amount?: number;
+  transactionId?: string;
+  rejectionReason?: string;
   registeredAt: string;
   // enriched fields
   eventTitle?: string;
@@ -274,6 +320,7 @@ export interface ApiNotification {
   eventId: number;
   notificationType: string;
   message: string;
+  title?: string;
   isRead: boolean;
   read?: boolean;
   createdAt: string;
@@ -318,4 +365,106 @@ export async function apiMarkAllNotificationsAsRead(): Promise<MarkAllReadRespon
     headers: authHeaders(),
   });
   return handleResponse<MarkAllReadResponse>(res);
+}
+
+// ── Manual UPI Payment Verification ──────────────────────────
+
+export interface ApiPaymentSubmission {
+  id: number;
+  registrationId: number;
+  studentId: number;
+  eventId: number;
+  amount: number;
+  transactionId: string;
+  screenshotPath: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  rejectionReason?: string;
+  verifiedBy?: number;
+  verifiedByName?: string;
+  submittedAt: string;
+  verifiedAt?: string;
+  studentName?: string;
+  registerNumber?: string;
+  email?: string;
+  department?: string;
+  year?: string;
+  eventTitle?: string;
+  eventDate?: string;
+  venue?: string;
+}
+
+export async function apiSubmitPaymentProof(
+  eventId: number,
+  transactionId: string,
+  screenshot: File
+): Promise<{ message: string; submission: ApiPaymentSubmission }> {
+  const token = getToken();
+  const form = new FormData();
+  form.append('eventId', String(eventId));
+  form.append('transactionId', transactionId);
+  form.append('screenshot', screenshot);
+
+  const res = await fetch(`${BASE}/payments/submit`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  return handleResponse<{ message: string; submission: ApiPaymentSubmission }>(res);
+}
+
+export async function apiGetAdminPayments(status: string = 'ALL'): Promise<ApiPaymentSubmission[]> {
+  const res = await fetch(`${BASE}/payments/admin/all?status=${status}`, { headers: authHeaders() });
+  return handleResponse<ApiPaymentSubmission[]>(res);
+}
+
+export async function apiGetAdminPaymentCounts(): Promise<Record<string, number>> {
+  const res = await fetch(`${BASE}/payments/admin/counts`, { headers: authHeaders() });
+  return handleResponse<Record<string, number>>(res);
+}
+
+export async function apiApprovePayment(id: number): Promise<{ message: string; submission: ApiPaymentSubmission }> {
+  const res = await fetch(`${BASE}/payments/${id}/approve`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  return handleResponse<{ message: string; submission: ApiPaymentSubmission }>(res);
+}
+
+export async function apiRejectPayment(id: number, reason: string): Promise<{ message: string; submission: ApiPaymentSubmission }> {
+  const res = await fetch(`${BASE}/payments/${id}/reject`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ reason }),
+  });
+  return handleResponse<{ message: string; submission: ApiPaymentSubmission }>(res);
+}
+
+export function getPaymentProofUrl(id: number): string {
+  const token = getToken();
+  return token ? `${BASE}/payments/${id}/proof?token=${encodeURIComponent(token)}` : `${BASE}/payments/${id}/proof`;
+}
+
+export interface ApiReceipt {
+  systemTitle: string;
+  institution: string;
+  receiptNumber: string;
+  registrationId: string;
+  studentName: string;
+  registerNumber: string;
+  email: string;
+  department: string;
+  eventTitle: string;
+  eventDate: string;
+  venue: string;
+  amount: number;
+  transactionId: string;
+  paymentStatus: string;
+  verifiedBy: string;
+  submittedAt: string;
+  approvalDate: string;
+}
+
+export async function apiGetReceipt(registrationId: number): Promise<ApiReceipt> {
+  const res = await fetch(`${BASE}/payments/receipt/${registrationId}`, { headers: authHeaders() });
+  return handleResponse<ApiReceipt>(res);
 }

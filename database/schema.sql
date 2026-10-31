@@ -51,13 +51,17 @@ CREATE TABLE IF NOT EXISTS events (
     status                ENUM('DRAFT','PUBLISHED','COMPLETED','CANCELLED')
                           NOT NULL DEFAULT 'DRAFT',
     created_by            BIGINT       NOT NULL,
+    fee                   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    upi_qr_image          VARCHAR(255) DEFAULT NULL,
+    is_deleted            TINYINT(1)   NOT NULL DEFAULT 0,
     created_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     updated_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
                           ON UPDATE CURRENT_TIMESTAMP,
 
     FOREIGN KEY fk_event_creator (created_by) REFERENCES students(id),
     INDEX idx_event_status (status),
-    INDEX idx_event_date   (event_date)
+    INDEX idx_event_date   (event_date),
+    INDEX idx_event_deleted (is_deleted)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
@@ -68,18 +72,49 @@ CREATE TABLE IF NOT EXISTS events (
 -- to also prevent overbooking.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS registrations (
-    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
-    student_id    BIGINT NOT NULL,
-    event_id      BIGINT NOT NULL,
-    status        ENUM('REGISTERED','WAITLISTED','CANCELLED')
-                  NOT NULL DEFAULT 'REGISTERED',
-    registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+    student_id     BIGINT NOT NULL,
+    event_id       BIGINT NOT NULL,
+    status         ENUM('REGISTERED','WAITLISTED','CANCELLED','PENDING')
+                   NOT NULL DEFAULT 'REGISTERED',
+    payment_status ENUM('NOT_REQUIRED','PENDING','APPROVED','REJECTED')
+                   NOT NULL DEFAULT 'NOT_REQUIRED',
+    registered_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     UNIQUE KEY uq_student_event (student_id, event_id),
     FOREIGN KEY fk_reg_student (student_id) REFERENCES students(id) ON DELETE CASCADE,
     FOREIGN KEY fk_reg_event   (event_id)   REFERENCES events(id)   ON DELETE CASCADE,
     INDEX idx_reg_student (student_id),
-    INDEX idx_reg_event   (event_id)
+    INDEX idx_reg_event   (event_id),
+    INDEX idx_reg_payment_status (payment_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Table: payment_submissions
+-- Stores manual UPI payment submissions from students for paid events.
+-- Verified by administrators before registration is confirmed.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS payment_submissions (
+    id               BIGINT         AUTO_INCREMENT PRIMARY KEY,
+    registration_id  BIGINT         NOT NULL,
+    student_id       BIGINT         NOT NULL,
+    event_id         BIGINT         NOT NULL,
+    amount           DECIMAL(10, 2) NOT NULL,
+    transaction_id   VARCHAR(100)   NOT NULL,
+    screenshot_path  VARCHAR(255)   NOT NULL,
+    status           ENUM('PENDING', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'PENDING',
+    rejection_reason TEXT           NULL,
+    verified_by      BIGINT         NULL,
+    submitted_at     TIMESTAMP      DEFAULT CURRENT_TIMESTAMP,
+    verified_at      TIMESTAMP      NULL,
+
+    UNIQUE KEY uq_transaction_id (transaction_id),
+    FOREIGN KEY fk_pay_reg     (registration_id) REFERENCES registrations(id) ON DELETE CASCADE,
+    FOREIGN KEY fk_pay_student (student_id)      REFERENCES students(id)      ON DELETE CASCADE,
+    FOREIGN KEY fk_pay_event   (event_id)        REFERENCES events(id)        ON DELETE CASCADE,
+    FOREIGN KEY fk_pay_admin   (verified_by)     REFERENCES students(id)      ON DELETE SET NULL,
+    INDEX idx_pay_student_event (student_id, event_id),
+    INDEX idx_pay_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================

@@ -1,17 +1,20 @@
 package com.campus.events.model;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
  * Model class representing a student's registration for an event.
  * Maps to the 'registrations' table.
- * Status: REGISTERED, WAITLISTED, CANCELLED
+ * Status: REGISTERED, WAITLISTED, CANCELLED, PENDING
+ * PaymentStatus: NOT_REQUIRED, PENDING, APPROVED, REJECTED
  */
 public class Registration {
     private Long id;
     private Long studentId;
     private Long eventId;
-    private String status; // REGISTERED, WAITLISTED, CANCELLED
+    private String status; // REGISTERED, WAITLISTED, CANCELLED, PENDING
+    private String paymentStatus = "NOT_REQUIRED"; // NOT_REQUIRED, PENDING, APPROVED, REJECTED
     private LocalDateTime registeredAt;
 
     // Joined fields for display
@@ -23,6 +26,10 @@ public class Registration {
     private String eventTitle;
     private LocalDateTime eventDate;
     private String eventStatus;
+    private String venue;
+    private BigDecimal amount;
+    private String transactionId;
+    private String rejectionReason;
 
     public Registration() {}
 
@@ -38,6 +45,9 @@ public class Registration {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public String getPaymentStatus() { return paymentStatus != null ? paymentStatus : "NOT_REQUIRED"; }
+    public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
 
     public LocalDateTime getRegisteredAt() { return registeredAt; }
     public void setRegisteredAt(LocalDateTime registeredAt) { this.registeredAt = registeredAt; }
@@ -65,4 +75,16 @@ public class Registration {
 
     public String getEventStatus() { return eventStatus; }
     public void setEventStatus(String eventStatus) { this.eventStatus = eventStatus; }
+
+    public String getVenue() { return venue; }
+    public void setVenue(String venue) { this.venue = venue; }
+
+    public BigDecimal getAmount() { return amount; }
+    public void setAmount(BigDecimal amount) { this.amount = amount; }
+
+    public String getTransactionId() { return transactionId; }
+    public void setTransactionId(String transactionId) { this.transactionId = transactionId; }
+
+    public String getRejectionReason() { return rejectionReason; }
+    public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
 }

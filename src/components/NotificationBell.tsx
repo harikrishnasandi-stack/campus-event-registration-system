@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   apiGetMyNotifications,
   apiGetUnreadNotificationCount,
@@ -12,25 +12,32 @@ interface Props {
   navigate: (page: Page, extra?: Record<string, unknown>) => void;
 }
 
-const isItemRead = (n: ApiNotification): boolean => n.isRead === true || n.read === true;
+const isItemRead = (n: ApiNotification): boolean =>
+  Boolean(n.isRead === true || n.read === true || (n as any).is_read === true || (n as any).is_read === 1 || (n as any).isRead === 1);
 
 export default function NotificationBell({ navigate }: Props) {
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [notifications, setNotifications] = useState<ApiNotification[]>([]);
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
+  const [markingAll, setMarkingAll] = useState<boolean>(false);
+
+  // Set of notification IDs currently being marked as read in-flight to prevent duplicate requests
+  const pendingIdsRef = useRef<Set<number>>(new Set());
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const fetchUnreadCount = async () => {
+  const fetchUnreadCount = useCallback(async () => {
     try {
       const data = await apiGetUnreadNotificationCount();
-      setUnreadCount(data.unreadCount);
+      if (typeof data.unreadCount === 'number') {
+        setUnreadCount(data.unreadCount);
+      }
     } catch {
       // Ignore background poll errors
     }
-  };
+  }, []);
 
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     setLoading(true);
     try {
       const data = await apiGetMyNotifications();
@@ -42,19 +49,34 @@ export default function NotificationBell({ navigate }: Props) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchUnreadCount();
-    // Poll unread count every 30 seconds while student is logged in
+
+    // Listen for broadcast events from other actions (e.g. event creation or external read updates)
+    const handleRefresh = () => {
+      fetchUnreadCount();
+      if (isOpen) {
+        loadNotifications();
+      }
+    };
+    window.addEventListener('notification-refresh', handleRefresh);
+    window.addEventListener('notifications-updated', handleRefresh);
+
+    // Poll unread count every 30 seconds while logged in
     const interval = setInterval(() => {
-      // Only poll when dropdown is closed to avoid overriding active UI interactions
       if (!isOpen) {
         fetchUnreadCount();
       }
     }, 30000);
-    return () => clearInterval(interval);
-  }, [isOpen]);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('notification-refresh', handleRefresh);
+      window.removeEventListener('notifications-updated', handleRefresh);
+    };
+  }, [isOpen, fetchUnreadCount, loadNotifications]);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -78,52 +100,99 @@ export default function NotificationBell({ navigate }: Props) {
 
   const handleMarkAsRead = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
+
+    // Prevent duplicate API requests if already pending or already read
+    if (pendingIdsRef.current.has(id)) return;
     const target = notifications.find(n => n.id === id);
-    if (!target || isItemRead(target)) return; // Guard: do not double-decrement if already read
+    if (!target || isItemRead(target)) return;
+
+    pendingIdsRef.current.add(id);
+
+    // 1. IMMEDIATELY update UI optimistically (no page refresh required)
+    setNotifications(prev =>
+      prev.map(n => (n.id === id ? { ...n, isRead: true, read: true } : n))
+    );
+    setUnreadCount(prev => Math.max(0, prev - 1));
 
     try {
+      // 2. Perform database update via backend API
       const res = await apiMarkNotificationAsRead(id);
-      setNotifications(prev =>
-        prev.map(n => (n.id === id ? { ...n, isRead: true, read: true } : n))
-      );
+
+      // 3. Reconcile with exact server unread count if available
       if (typeof res.unreadCount === 'number') {
         setUnreadCount(res.unreadCount);
-      } else {
-        setUnreadCount(prev => Math.max(0, prev - 1));
       }
+
+      // Notify other components (like StudentDashboard banner) immediately
+      window.dispatchEvent(new CustomEvent('notifications-updated', { detail: { id, isRead: true } }));
     } catch (err) {
-      console.error('Failed to mark notification as read', err);
+      console.error('Failed to mark notification as read on server', err);
+      // Rollback optimistic update on server error
+      setNotifications(prev =>
+        prev.map(n => (n.id === id ? { ...n, isRead: false, read: false } : n))
+      );
+      setUnreadCount(prev => prev + 1);
+    } finally {
+      pendingIdsRef.current.delete(id);
     }
   };
 
   const handleMarkAllAsRead = async () => {
+    if (markingAll || unreadCount === 0) return;
+    setMarkingAll(true);
+
+    // Save previous state for rollback if needed
+    const prevNotifications = [...notifications];
+    const prevUnreadCount = unreadCount;
+
+    // 1. IMMEDIATELY mark all notifications as read in UI optimistically
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true, read: true })));
+    setUnreadCount(0);
+
     try {
+      // 2. Perform batch database update via backend API
       const res = await apiMarkAllNotificationsAsRead();
-      setNotifications(prev => prev.map(n => ({ ...n, isRead: true, read: true })));
       setUnreadCount(res.unreadCount ?? 0);
+
+      // Notify other components immediately
+      window.dispatchEvent(new CustomEvent('notifications-updated', { detail: { allRead: true } }));
     } catch (err) {
-      console.error('Failed to mark all as read', err);
+      console.error('Failed to mark all as read on server', err);
+      // Rollback on server error
+      setNotifications(prevNotifications);
+      setUnreadCount(prevUnreadCount);
+    } finally {
+      setMarkingAll(false);
     }
   };
 
   const handleNotificationClick = async (n: ApiNotification) => {
     if (!isItemRead(n)) {
-      try {
-        const res = await apiMarkNotificationAsRead(n.id);
+      if (!pendingIdsRef.current.has(n.id)) {
+        pendingIdsRef.current.add(n.id);
+        // Optimistic update
         setNotifications(prev =>
           prev.map(item => (item.id === n.id ? { ...item, isRead: true, read: true } : item))
         );
-        if (typeof res.unreadCount === 'number') {
-          setUnreadCount(res.unreadCount);
-        } else {
-          setUnreadCount(prev => Math.max(0, prev - 1));
+        setUnreadCount(prev => Math.max(0, prev - 1));
+
+        try {
+          const res = await apiMarkNotificationAsRead(n.id);
+          if (typeof res.unreadCount === 'number') {
+            setUnreadCount(res.unreadCount);
+          }
+          window.dispatchEvent(new CustomEvent('notifications-updated', { detail: { id: n.id, isRead: true } }));
+        } catch {
+          // Ignore navigation click error
+        } finally {
+          pendingIdsRef.current.delete(n.id);
         }
-      } catch {
-        // Continue navigation even if marking read fails
       }
     }
     setIsOpen(false);
-    navigate('event-detail', { selectedEventId: String(n.eventId) });
+    if (n.eventId) {
+      navigate('event-detail', { selectedEventId: String(n.eventId) });
+    }
   };
 
   return (
@@ -147,7 +216,7 @@ export default function NotificationBell({ navigate }: Props) {
           outline: 'none',
         }}
         title="Notifications"
-        aria-label="Event deadline notifications"
+        aria-label="Event notifications"
       >
         🔔
         {unreadCount > 0 && (
@@ -182,8 +251,8 @@ export default function NotificationBell({ navigate }: Props) {
             position: 'absolute',
             right: 0,
             top: 'calc(100% + 8px)',
-            width: '360px',
-            maxWidth: '90vw',
+            width: '380px',
+            maxWidth: '92vw',
             background: '#ffffff',
             borderRadius: '12px',
             boxShadow: '0 10px 30px rgba(15, 23, 42, 0.15), 0 1px 3px rgba(15, 23, 42, 0.08)',
@@ -229,17 +298,18 @@ export default function NotificationBell({ navigate }: Props) {
               <button
                 type="button"
                 onClick={handleMarkAllAsRead}
+                disabled={markingAll}
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#2563eb',
+                  color: markingAll ? '#94a3b8' : '#2563eb',
                   fontSize: '0.75rem',
                   fontWeight: 600,
-                  cursor: 'pointer',
+                  cursor: markingAll ? 'not-allowed' : 'pointer',
                   padding: 0,
                 }}
               >
-                Mark all read
+                {markingAll ? 'Marking read…' : 'Mark all read'}
               </button>
             )}
           </div>
@@ -257,12 +327,16 @@ export default function NotificationBell({ navigate }: Props) {
                   All caught up!
                 </div>
                 <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: '4px' }}>
-                  No upcoming deadline reminders right now.
+                  No notifications at the moment.
                 </div>
               </div>
             ) : (
               notifications.map(n => {
                 const itemRead = isItemRead(n);
+                const isAnnouncement = n.notificationType === 'EVENT_ANNOUNCEMENT';
+                const emoji = isAnnouncement ? '📢' : n.notificationType === 'REGISTRATION_DEADLINE' ? '⏰' : '🔔';
+                const displayTitle = n.title || (isAnnouncement ? 'New Event Announcement!' : 'Event Deadline Reminder');
+
                 return (
                   <div
                     key={n.id}
@@ -284,20 +358,37 @@ export default function NotificationBell({ navigate }: Props) {
                       e.currentTarget.style.background = itemRead ? '#ffffff' : '#f0f9ff';
                     }}
                   >
-                    <div style={{ fontSize: '1.25rem', marginTop: '2px' }}>⏰</div>
+                    <div style={{ fontSize: '1.25rem', marginTop: '2px', flexShrink: 0 }}>{emoji}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                        <div
-                          style={{
-                            fontWeight: itemRead ? 600 : 700,
-                            fontSize: '0.85rem',
-                            color: '#1e293b',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          {n.eventTitle || 'Event Deadline Reminder'}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                        <div>
+                          <div
+                            style={{
+                              fontWeight: itemRead ? 600 : 700,
+                              fontSize: '0.85rem',
+                              color: isAnnouncement ? '#1e3a8a' : '#1e293b',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              flexWrap: 'wrap',
+                            }}
+                          >
+                            <span>{displayTitle}</span>
+                            {n.eventTitle && (
+                              <span
+                                style={{
+                                  background: isAnnouncement ? '#e0e7ff' : '#f1f5f9',
+                                  color: isAnnouncement ? '#3730a3' : '#475569',
+                                  padding: '1px 6px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {n.eventTitle}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         {!itemRead && (
                           <span
@@ -307,7 +398,7 @@ export default function NotificationBell({ navigate }: Props) {
                               borderRadius: '50%',
                               background: '#2563eb',
                               display: 'inline-block',
-                              marginLeft: '6px',
+                              marginTop: '4px',
                               flexShrink: 0,
                             }}
                           />
@@ -318,7 +409,8 @@ export default function NotificationBell({ navigate }: Props) {
                           margin: '4px 0 6px 0',
                           fontSize: '0.78rem',
                           color: '#475569',
-                          lineHeight: 1.4,
+                          lineHeight: 1.45,
+                          wordBreak: 'break-word',
                         }}
                       >
                         {n.message}
@@ -348,7 +440,7 @@ export default function NotificationBell({ navigate }: Props) {
                               background: '#e2e8f0',
                               border: 'none',
                               borderRadius: '4px',
-                              padding: '2px 6px',
+                              padding: '2px 8px',
                               fontSize: '0.7rem',
                               color: '#334155',
                               cursor: 'pointer',
